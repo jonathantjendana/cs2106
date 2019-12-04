@@ -1,0 +1,65 @@
+/*************************************
+ * Lab 3 Exercise 3
+ * Name: Yang Chenglong
+ * Student No: A0167107H
+ * Lab Group: 07
+ *************************************/
+
+#include <stdio.h>
+#include <semaphore.h>
+#include <pthread.h>
+#include <stdlib.h>
+
+#include "traffic_synchronizer.h"
+
+
+//Using extern, you can use the global variables num_of_cars and num_of_segments from ex3_runner.c in your code.
+extern int num_of_cars;
+extern int num_of_segments;
+
+sem_t *mutex;
+sem_t carNum;
+
+void initialise()
+{
+    // monitor number of cars in the roundabout
+    // at most num_of_segments-1 cars
+    sem_init(&carNum, 0, num_of_segments-1);
+    // mutex for each segment
+    mutex = (sem_t *)malloc(num_of_segments * sizeof(sem_t));
+    for (int i = 0; i < num_of_segments; i++) {
+        sem_init(&mutex[i], 0, 1);
+    }
+}
+
+void cleanup() {
+    for (int i = 0; i < num_of_segments; i++) {
+        sem_destroy(&mutex[i]);
+    }
+    free(mutex);
+    sem_destroy(&carNum);
+}
+
+void *car(void *car) {
+    car_struct *curr = (car_struct *)car;
+    // wait for space in roundabout
+    sem_wait(&carNum);
+    // wait for space in entry segment
+    sem_wait(&mutex[curr->entry_seg]);
+    // enter segment
+    enter_roundabout(curr);
+
+    while(curr->current_seg != curr->exit_seg) {
+        int prev_seg = curr->current_seg;
+        int next_seg =  NEXT(curr->current_seg, num_of_segments);
+        sem_wait(&mutex[next_seg]);
+        move_to_next_segment(curr);
+        sem_post(&mutex[prev_seg]);
+    }
+
+    exit_roundabout(curr);
+    sem_post(&mutex[curr->exit_seg]);
+    sem_post(&carNum);
+
+    pthread_exit(NULL);
+}
